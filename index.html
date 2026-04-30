@@ -2,62 +2,21 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Recuerdo 3D - Municipio</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diagnóstico de Carga</title>
     <style>
-        body {
-            margin: 0;
-            overflow: hidden;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        #info {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: white;
-            background: rgba(0,0,0,0.6);
-            padding: 8px 20px;
-            border-radius: 30px;
-            font-size: 14px;
-            pointer-events: none;
-            backdrop-filter: blur(5px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            z-index: 10;
-        }
-        #loader {
-            position: absolute;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: white;
-            background: rgba(0,0,0,0.7);
-            padding: 10px 25px;
-            border-radius: 20px;
-            font-size: 14px;
-            backdrop-filter: blur(5px);
-            transition: opacity 0.5s;
-            z-index: 10;
-        }
-        .instruction {
-            position: absolute;
-            bottom: 30px;
-            right: 20px;
-            color: rgba(255,255,255,0.6);
-            font-size: 12px;
-            background: rgba(0,0,0,0.4);
-            padding: 5px 12px;
-            border-radius: 15px;
-            backdrop-filter: blur(4px);
-            z-index: 10;
-        }
+        body { margin: 0; background: #222; color: white; font-family: monospace; padding: 20px; }
+        #log { background: #111; padding: 15px; border-radius: 8px; max-height: 400px; overflow-y: auto; }
+        .success { color: #4f4; }
+        .error { color: #f44; }
+        .info { color: #4af; }
+        canvas { display: block; margin-top: 20px; border: 1px solid #444; }
     </style>
 </head>
 <body>
-    <div id="info">🏞️ Municipio Conmemorativo</div>
-    <div id="loader">Cargando modelo 3D...</div>
-    <div class="instruction">🖱️ Arrastra para girar | 📜 Scroll para zoom</div>
+    <h2>🔍 Diagnóstico de Carga del Modelo</h2>
+    <div id="log"></div>
 
-    <!-- Importar librerías Three.js desde CDN -->
     <script type="importmap">
         {
             "imports": {
@@ -69,180 +28,124 @@
 
     <script type="module">
         import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 
-        // --- CONFIGURACIÓN INICIAL ---
-        // Obtener el nombre del modelo desde la URL (?modelo=...)
-        const urlParams = new URLSearchParams(window.location.search);
-        // Si no hay parámetro, usa el modelo por defecto que ya tienes
-        const modeloNombre = urlParams.get('modelo') || 'm1_v1_vdeep.glb';
+        const logElement = document.getElementById('log');
         
-        // Actualizar información en pantalla (puedes personalizarlo luego)
-        const nombreMostrado = modeloNombre.replace('.glb','').replace(/_/g, ' ');
-        document.getElementById('info').textContent = `📍 ${nombreMostrado}`;
+        function log(msg, type = 'info') {
+            const p = document.createElement('p');
+            p.className = type;
+            p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logElement.appendChild(p);
+            console.log(msg);
+        }
 
-        // --- ESCENA, CÁMARA Y RENDERER ---
+        log('🚀 Iniciando diagnóstico...', 'info');
+        
+        // Verificar URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const modeloNombre = urlParams.get('modelo') || 'm1_v1_vdeep.glb';
+        log(`📁 Modelo solicitado: "${modeloNombre}"`, 'info');
+        log(`🔗 URL completa: ${window.location.href}`, 'info');
+
+        // Escena simple para prueba
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x111122); // Fondo azul muy oscuro
-
-        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(5, 3, 8);
-        camera.lookAt(0, 0.5, 0);
-
-        const renderer = new THREE.WebGLRenderer({ 
-            antialias: true,
-            alpha: false 
-        });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Rendimiento en móviles
-        renderer.shadowMap.enabled = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.2;
+        scene.background = new THREE.Color(0x333333);
+        
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / 400, 0.1, 100);
+        camera.position.set(3, 2, 5);
+        
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, 400);
         document.body.appendChild(renderer.domElement);
 
-        // --- CONTROLES ---
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.target.set(0, 0.8, 0);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-        controls.minDistance = 2.5;
-        controls.maxDistance = 15;
-        controls.maxPolarAngle = Math.PI / 1.8; // No dejar ver debajo del suelo
-        controls.update();
+        // Luces básicas
+        scene.add(new THREE.AmbientLight(0xffffff, 1));
+        const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+        dirLight.position.set(5, 10, 5);
+        scene.add(dirLight);
 
-        // --- ILUMINACIÓN ---
-        // Luz ambiental suave
-        const ambientLight = new THREE.AmbientLight(0x404066, 1.5);
-        scene.add(ambientLight);
-        
-        // Luz principal que proyecta sombras
-        const mainLight = new THREE.DirectionalLight(0xffeedd, 6);
-        mainLight.position.set(5, 8, 5);
-        mainLight.castShadow = true;
-        mainLight.receiveShadow = true;
-        mainLight.shadow.mapSize.width = 1024;
-        mainLight.shadow.mapSize.height = 1024;
-        mainLight.shadow.camera.near = 1;
-        mainLight.shadow.camera.far = 30;
-        mainLight.shadow.camera.left = -10;
-        mainLight.shadow.camera.right = 10;
-        mainLight.shadow.camera.top = 10;
-        mainLight.shadow.camera.bottom = -10;
-        scene.add(mainLight);
-        
-        // Luz de relleno desde atrás
-        const fillLight = new THREE.DirectionalLight(0x8899ff, 2);
-        fillLight.position.set(-3, 1, -3);
-        scene.add(fillLight);
+        // Rejilla de referencia
+        const gridHelper = new THREE.GridHelper(10, 10, 0x666666, 0x444444);
+        scene.add(gridHelper);
 
-        // --- SUELO (Base reflectante sutil) ---
-        const groundGeometry = new THREE.CircleGeometry(4, 32);
-        const groundMaterial = new THREE.MeshStandardMaterial({ 
-            color: 0x1a1a3a, 
-            roughness: 0.4, 
-            metalness: 0.7,
-            side: THREE.DoubleSide
-        });
-        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
-        ground.rotation.x = -Math.PI / 2;
-        ground.position.y = -0.01;
-        ground.receiveShadow = true;
-        scene.add(ground);
-
-        // Anillo decorativo
-        const ringGeometry = new THREE.TorusGeometry(2.2, 0.03, 16, 64);
-        const ringMaterial = new THREE.MeshStandardMaterial({ color: 0xccaa88, roughness: 0.3, metalness: 0.8 });
-        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.y = 0;
-        ring.receiveShadow = true;
-        scene.add(ring);
-
-        // --- CARGA DEL MODELO 3D ---
+        // Intentar cargar
         const loader = new GLTFLoader();
-        const loaderElement = document.getElementById('loader');
+        log('📡 Intentando fetch del archivo...', 'info');
         
-        console.log(`Intentando cargar: ${modeloNombre}`);
-        
-        loader.load(
-            // 1. Ruta del modelo (relativa al index.html)
-            modeloNombre,
-            
-            // 2. Progreso de carga
-            (xhr) => {
-                const porcentaje = Math.round((xhr.loaded / xhr.total) * 100);
-                loaderElement.textContent = `Cargando modelo... ${porcentaje}%`;
-            },
-            
-            // 3. Error en la carga
-            (error) => {
-                console.error('Error cargando el modelo:', error);
-                loaderElement.textContent = '❌ Error al cargar el modelo. Verifica el nombre.';
-                loaderElement.style.color = '#ff8888';
-            },
-            
-            // 4. Éxito: Modelo cargado
-            (gltf) => {
-                const model = gltf.scene;
+        // Primero verificar si el archivo existe con fetch
+        fetch(modeloNombre)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                log(`✅ Archivo encontrado (${response.headers.get('content-length') || '?'} bytes)`, 'success');
+                log(`📋 Content-Type: ${response.headers.get('content-type')}`, 'info');
                 
-                // Centrar y escalar el modelo
-                const box = new THREE.Box3().setFromObject(model);
-                const center = box.getCenter(new THREE.Vector3());
-                const size = box.getSize(new THREE.Vector3());
-                
-                const maxDim = Math.max(size.x, size.y, size.z);
-                const scale = 3.5 / maxDim; // Escala para que ocupe ~3.5 unidades
-                
-                model.scale.set(scale, scale, scale);
-                model.position.set(-center.x * scale, -center.y * scale + 0.2, -center.z * scale);
-                
-                // Activar sombras en todo el modelo
-                model.traverse((node) => {
-                    if (node.isMesh) {
-                        node.castShadow = true;
-                        node.receiveShadow = true;
-                        // Mejorar materiales si son muy oscuros
-                        if (node.material) {
-                            node.material.roughness = node.material.roughness || 0.7;
-                            node.material.metalness = node.material.metalness || 0.1;
+                // Ahora cargar con GLTFLoader
+                log('🔄 Iniciando parseo GLB...', 'info');
+                return new Promise((resolve, reject) => {
+                    loader.load(
+                        modeloNombre,
+                        (gltf) => {
+                            log('✅ Modelo GLB parseado correctamente', 'success');
+                            resolve(gltf);
+                        },
+                        (progress) => {
+                            const pct = progress.total > 0 ? Math.round(progress.loaded / progress.total * 100) : 0;
+                            log(`📊 Progreso: ${pct}%`, 'info');
+                        },
+                        (error) => {
+                            log(`❌ Error en GLTFLoader: ${error.message}`, 'error');
+                            reject(error);
                         }
+                    );
+                });
+            })
+            .then(gltf => {
+                const model = gltf.scene;
+                log(`📦 Objetos en la escena: ${model.children.length}`, 'info');
+                
+                // Mostrar jerarquía
+                model.traverse(node => {
+                    if (node.isMesh) {
+                        log(`🔷 Mesh: "${node.name}" - Geometría: ${node.geometry.type}`, 'info');
                     }
                 });
+
+                // Centrar modelo
+                const box = new THREE.Box3().setFromObject(model);
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+                
+                log(`📏 Dimensiones: ${size.x.toFixed(2)} x ${size.y.toFixed(2)} x ${size.z.toFixed(2)}`, 'info');
+                log(`📍 Centro: ${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}`, 'info');
+                
+                const scale = 3 / Math.max(size.x, size.y, size.z);
+                model.scale.setScalar(scale);
+                model.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
                 
                 scene.add(model);
-                
-                // Ocultar loader con transición
-                loaderElement.style.opacity = '0';
-                setTimeout(() => {
-                    loaderElement.style.display = 'none';
-                }, 500);
-                
-                console.log('✅ Modelo cargado exitosamente');
-            }
-        );
+                log('✅ Modelo agregado a la escena', 'success');
+            })
+            .catch(error => {
+                log(`💥 Error fatal: ${error.message}`, 'error');
+                // Crear cubo de error visual
+                const geo = new THREE.BoxGeometry(1, 1, 1);
+                const mat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+                const cube = new THREE.Mesh(geo, mat);
+                cube.position.y = 0.5;
+                scene.add(cube);
+                log('🔴 Se agregó cubo rojo como indicador de error', 'error');
+            });
 
-        // --- ANIMACIÓN Y RENDERIZADO ---
+        // Animación
         function animate() {
             requestAnimationFrame(animate);
-            
-            // Rotación sutil para dar vida
-            // ring.rotation.z += 0.002;
-            
-            controls.update();
             renderer.render(scene, camera);
         }
-        
         animate();
-
-        // --- RESPONSIVIDAD ---
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        });
+        log('🎬 Animación iniciada', 'info');
     </script>
 </body>
 </html>
