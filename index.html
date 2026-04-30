@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>AR - Tarjeta Postal 3D</title>
+    
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', sans-serif;
+            background: #000;
+        }
+
+        #ar-container {
+            width: 100vw;
+            height: 100vh;
+            position: fixed;
+            top: 0;
+            left: 0;
+        }
+
+        /* ── Info bar ── */
+        #info-bar {
+            position: absolute;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            /* CORREGIDO: fondo sólido como fallback para navegadores sin backdrop-filter */
+            background: rgba(0, 0, 0, 0.82);
+            padding: 12px 25px;
+            border-radius: 30px;
+            font-size: 16px;
+            z-index: 100;
+            pointer-events: none;
+            /* backdrop-filter solo donde esté soportado */
+            -webkit-backdrop-filter: blur(10px);
+            backdrop-filter: blur(10px);
+            transition: all 0.5s ease;
+            text-align: center;
+            white-space: nowrap;
+        }
+
+        #info-bar.found {
+            background: rgba(0, 200, 100, 0.85);
+        }
+
+        /* ── Pantalla de carga ── */
+        #loading-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.92);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 200;
+            transition: opacity 0.5s ease;
+        }
+
+        #loading-screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .loader-spinner {
+            width: 60px;
+            height: 60px;
+            border: 5px solid rgba(255, 255, 255, 0.3);
+            border-top: 5px solid #00c864;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loader-text {
+            color: white;
+            font-size: 18px;
+            text-align: center;
+            padding: 0 24px;
+            line-height: 1.5;
+        }
+
+        /* ── Pantalla de error (WebGL no disponible) ── */
+        #error-screen {
+            display: none;
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: #111;
+            color: white;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 300;
+            padding: 32px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        #error-screen.visible {
+            display: flex;
+        }
+
+        #error-screen h2 {
+            font-size: 22px;
+            margin-bottom: 12px;
+            color: #ff5c5c;
+        }
+
+        #error-screen p {
+            font-size: 15px;
+            color: #ccc;
+            max-width: 360px;
+            line-height: 1.6;
+        }
+
+        /* ── Instrucción flotante ── */
+        #instruction {
+            position: absolute;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: white;
+            font-size: 14px;
+            opacity: 0.75;
+            z-index: 100;
+            pointer-events: none;
+            text-align: center;
+            line-height: 1.6;
+            transition: opacity 0.5s ease;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ar-container"></div>
+
+    <div id="info-bar">📸 Apunta la cámara a la postal</div>
+
+    <div id="instruction">
+        Mueve lentamente tu teléfono<br>alrededor de la tarjeta postal
+    </div>
+
+    <!-- Pantalla de carga normal -->
+    <div id="loading-screen">
+        <div class="loader-spinner"></div>
+        <div class="loader-text" id="loading-text">Cargando experiencia AR...</div>
+    </div>
+
+    <!-- Pantalla de error WebGL / cámara -->
+    <div id="error-screen">
+        <h2>⚠️ No se puede iniciar AR</h2>
+        <p id="error-msg">Tu dispositivo no soporta WebGL, necesario para renderizar modelos 3D.<br><br>
+            Intenta abrir esta página en <strong>Chrome actualizado</strong> o en un dispositivo más reciente.</p>
+    </div>
+
+    <!-- ================================================ -->
+    <!-- DETECCIÓN DE WEBGL ANTES DE CARGAR A-FRAME       -->
+    <!-- Dispositivos sin WebGL nunca deben cargar three.js-->
+    <!-- ================================================ -->
+    <script>
+        (function () {
+            var canvas = document.createElement('canvas');
+            var gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+            if (!gl) {
+                document.getElementById('loading-screen').classList.add('hidden');
+                var es = document.getElementById('error-screen');
+                es.classList.add('visible');
+                // Detener todo: no cargar nada más
+                document.currentScript.ownerDocument.querySelectorAll('script[data-deferred]')
+                    .forEach(function (s) { s.remove(); });
+                throw new Error('WebGL no disponible en este dispositivo.');
+            }
+        })();
+    </script>
+
+    <!-- ================================================ -->
+    <!-- LIBRERÍAS                                         -->
+    <!-- Solo mindar-image-aframe.prod.js es necesario;   -->
+    <!-- ya incluye soporte para <a-gltf-model>.           -->
+    <!-- El segundo script (mindar-gltf-aframe) era        -->
+    <!-- redundante y se eliminó (~300 KB extra).         -->
+    <!-- ================================================ -->
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+    <!-- ================================================ -->
+    <!-- ESCENA AR                                         -->
+    <!-- CORREGIDO:                                        -->
+    <!--   · antialias: false  → evita crash en GPU antigua-->
+    <!--   · physicallyCorrectLights: false → menos carga  -->
+    <!--   · logarithmicDepthBuffer: false → WebGL 1 safe  -->
+    <!-- ================================================ -->
+    <a-scene
+        mindar-image="
+            imageTargetSrc: ./targets.mind;
+            maxTrack: 1;
+            filterMinCF: 0.0001;
+            filterBeta: 0.01;
+            warmupTolerance: 10;
+            missTolerance: 10;
+        "
+        vr-mode-ui="enabled: false"
+        device-orientation-permission-ui="enabled: false"
+        renderer="colorManagement: true; antialias: false; physicallyCorrectLights: false; logarithmicDepthBuffer: false;"
+        embedded
+    >
+        <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+        <a-entity mindar-image-target="targetIndex: 0">
+
+            <a-gltf-model
+                id="modelo-3d"
+                src="./m1_v1_vdeep.glb"
+                scale="0.5 0.5 0.5"
+                position="0 0 0.1"
+                rotation="0 0 0"
+                animation-mixer=""
+            ></a-gltf-model>
+
+            <a-light
+                type="directional"
+                intensity="1.5"
+                position="1 2 1"
+            ></a-light>
+
+        </a-entity>
+
+        <a-light type="ambient" intensity="0.8"></a-light>
+
+    </a-scene>
+
+    <!-- ================================================ -->
+    <!-- LÓGICA DE INTERFAZ                               -->
+    <!-- ================================================ -->
+    <script>
+        (function () {
+            var infoBar      = document.getElementById('info-bar');
+            var loadingScreen= document.getElementById('loading-screen');
+            var loadingText  = document.getElementById('loading-text');
+            var instruction  = document.getElementById('instruction');
+            var errorScreen  = document.getElementById('error-screen');
+            var errorMsg     = document.getElementById('error-msg');
+
+            var modelLoaded  = false;
+            var targetFound  = false;
+            var firstFound   = true;
+
+            // ── Pérdida de contexto WebGL (GPU sobrecargada) ──────────────
+            document.querySelector('a-scene').addEventListener('webglcontextlost', function () {
+                errorMsg.textContent =
+                    'La GPU perdió el contexto WebGL. Cierra otras aplicaciones o pestañas e intenta de nuevo.';
+                errorScreen.classList.add('visible');
+                loadingScreen.classList.add('hidden');
+            });
+
+            // ── Error de cámara / permisos ────────────────────────────────
+            document.querySelector('a-scene').addEventListener('camera-error', function () {
+                errorMsg.textContent =
+                    'No se pudo acceder a la cámara. Verifica que hayas dado permiso de cámara al navegador.';
+                errorScreen.classList.add('visible');
+                loadingScreen.classList.add('hidden');
+            });
+
+            // ── Carga del modelo ──────────────────────────────────────────
+            document.addEventListener('DOMContentLoaded', function () {
+                var interval = setInterval(function () {
+                    var el = document.getElementById('modelo-3d');
+                    if (el && el.hasLoaded) {
+                        modelLoaded = true;
+                        clearInterval(interval);
+                        updateLoadingState();
+                    }
+                }, 500);
+
+                // Timeout de seguridad: 8 s (más generoso para conexiones lentas)
+                setTimeout(function () {
+                    if (!modelLoaded) {
+                        modelLoaded = true;
+                        clearInterval(interval);
+                        loadingText.textContent = 'Listo — busca la postal';
+                        updateLoadingState();
+                    }
+                }, 8000);
+            });
+
+            // ── Tracking: imagen encontrada ───────────────────────────────
+            document.addEventListener('mindar-image-targetFound', function () {
+                targetFound = true;
+                if (firstFound) {
+                    firstFound = false;
+                    instruction.style.opacity = '0';
+                }
+                infoBar.textContent = '✅ ¡Postal encontrada!';
+                infoBar.classList.add('found');
+                updateLoadingState();
+            });
+
+            // ── Tracking: imagen perdida ──────────────────────────────────
+            var lastLost = Date.now();
+            document.addEventListener('mindar-image-targetLost', function () {
+                targetFound = false;
+                lastLost = Date.now();
+                infoBar.textContent = '🔍 Buscando postal...';
+                infoBar.classList.remove('found');
+
+                setTimeout(function () {
+                    if (!targetFound && Date.now() - lastLost >= 10000) {
+                        instruction.style.opacity = '1';
+                        instruction.innerHTML =
+                            '📌 Asegúrate de:<br>· Buena iluminación<br>· Ver la postal completa<br>· Sin reflejos';
+                    }
+                }, 10000);
+            });
+
+            // ── Control de pantalla de carga ──────────────────────────────
+            function updateLoadingState() {
+                if (modelLoaded) {
+                    setTimeout(function () {
+                        loadingScreen.classList.add('hidden');
+                    }, 600);
+                }
+            }
+
+        })();
+    </script>
+
+</body>
+</html>
