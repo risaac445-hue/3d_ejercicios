@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>AR - Mapa 3D</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: black; /* fallback, pero el video cubrirá */
+        }
+        /* Asegurar que el canvas de A-Frame sea transparente */
+        a-scene, a-scene canvas {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            background: transparent !important;
+        }
+        /* El video inyectado por MindAR debe ser visible */
+        video {
+            object-fit: cover;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1; /* detrás del canvas, pero el canvas transparente lo deja ver */
+        }
+        /* UI por encima */
+        .ui {
+            position: fixed;
+            bottom: 30px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            pointer-events: none;
+            z-index: 100;
+            color: white;
+            text-shadow: 1px 1px 2px black;
+            font-family: sans-serif;
+        }
+        .status {
+            background: rgba(0,0,0,0.6);
+            display: inline-block;
+            padding: 8px 18px;
+            border-radius: 40px;
+            font-size: 14px;
+            backdrop-filter: blur(8px);
+        }
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%,-50%);
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border-radius: 20px;
+            color: white;
+            z-index: 200;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">Cargando modelo 3D y cámara...<br>🔍</div>
+    <div class="ui">
+        <div class="status" id="statusMsg">📷 Iniciando cámara...</div>
+    </div>
+
+    <!-- Librerías -->
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+    <script>
+        // Registrar componente para dar color al terreno (opcional)
+        AFRAME.registerComponent('terrain-color', {
+            init: function() {
+                const el = this.el;
+                el.addEventListener('model-loaded', () => {
+                    const mesh = el.getObject3D('mesh');
+                    if (!mesh) return;
+                    mesh.traverse(node => {
+                        if (node.isMesh) {
+                            node.material = new THREE.MeshStandardMaterial({
+                                color: 0x8B9A6E,
+                                roughness: 0.6,
+                                metalness: 0.1,
+                                side: THREE.DoubleSide
+                            });
+                        }
+                    });
+                });
+            }
+        });
+    </script>
+
+    <!-- ESCENA AR CONFIGURADA PARA TRANSPARENCIA -->
+    <a-scene
+        mindar-image="imageTargetSrc: ./targets.mind; maxTrack: 1;"
+        vr-mode-ui="enabled: false"
+        device-orientation-permission-ui="enabled: false"
+        embedded
+        renderer="alpha: true; antialias: true;"
+        style="background: transparent;"
+    >
+        <!-- Cámara necesaria -->
+        <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+        <!-- Target -->
+        <a-entity mindar-image-target="targetIndex: 0">
+            <!-- Modelo GLTF desde QGIS. Ajusta scale y rotation -->
+            <a-gltf-model
+                src="./malla3d.gltf"
+                scale="0.04 0.04 0.04"
+                position="0 0.05 0"
+                rotation="-90 0 0"
+                terrain-color
+            ></a-gltf-model>
+            
+            <!-- Luces básicas -->
+            <a-light type="ambient" intensity="0.8"></a-light>
+            <a-light type="directional" intensity="1.2" position="1 2 1"></a-light>
+        </a-entity>
+    </a-scene>
+
+    <script>
+        // Ocultar loading cuando el modelo cargue
+        const loadingDiv = document.getElementById('loading');
+        const statusSpan = document.getElementById('statusMsg');
+        
+        let modelLoaded = false;
+        const modelElem = document.querySelector('a-gltf-model');
+        if (modelElem) {
+            modelElem.addEventListener('model-loaded', () => {
+                modelLoaded = true;
+                loadingDiv.style.display = 'none';
+                statusSpan.innerHTML = '✅ Busca la postal con la cámara';
+            });
+            // timeout
+            setTimeout(() => {
+                if (!modelLoaded) {
+                    loadingDiv.style.display = 'none';
+                    statusSpan.innerHTML = '⚠️ Modelo cargado parcialmente. Busca la postal.';
+                }
+            }, 8000);
+        } else {
+            loadingDiv.style.display = 'none';
+        }
+
+        // Eventos MindAR
+        document.addEventListener('mindar-image-targetFound', () => {
+            statusSpan.innerHTML = '🎉 ¡Mapa detectado!';
+            setTimeout(() => {
+                statusSpan.innerHTML = '✅ Postal encontrada';
+            }, 3000);
+        });
+        document.addEventListener('mindar-image-targetLost', () => {
+            statusSpan.innerHTML = '🔍 Perdida la postal, vuelve a enfocar';
+        });
+
+        // Forzar que el canvas sea transparente después de cada frame (por si acaso)
+        const sceneEl = document.querySelector('a-scene');
+        if (sceneEl) {
+            sceneEl.addEventListener('loaded', () => {
+                const canvas = sceneEl.canvas;
+                if (canvas) {
+                    canvas.style.background = 'transparent';
+                }
+            });
+        }
+    </script>
+</body>
+</html>
