@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>🗺️ Mapa 3D - Realidad Aumentada</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: black;
+            font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif;
+        }
+
+        a-scene {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            height: 100dvh !important;
+            z-index: 0 !important;
+        }
+
+        /* UI Overlay */
+        #ui-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px 16px 30px;
+        }
+
+        /* Tarjeta de estado */
+        .status-card {
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(12px);
+            border-radius: 60px;
+            padding: 10px 20px;
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            margin: 0 auto;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: all 0.3s ease;
+        }
+        .status-icon {
+            font-size: 24px;
+        }
+        .status-text {
+            font-weight: 600;
+            font-size: 15px;
+            color: white;
+            letter-spacing: 0.3px;
+        }
+        .status-card.found {
+            background: rgba(30, 130, 60, 0.85);
+            border-color: #b5ffc0;
+        }
+        .status-card.lost {
+            background: rgba(180, 70, 20, 0.85);
+            border-color: #ffb56b;
+        }
+
+        /* Panel de instrucciones */
+        .instruction-panel {
+            background: rgba(25, 25, 45, 0.85);
+            backdrop-filter: blur(20px);
+            border-radius: 48px;
+            padding: 16px 24px;
+            text-align: center;
+            width: fit-content;
+            margin: 0 auto;
+            border: 2px solid #ffdd99;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            transition: opacity 0.3s ease;
+        }
+        .instruction-panel .big-icon {
+            font-size: 44px;
+            display: block;
+            margin-bottom: 6px;
+            animation: pulse-icon 1.5s infinite alternate;
+        }
+        .instruction-panel .title {
+            font-weight: 800;
+            font-size: 18px;
+            color: #ffeaac;
+        }
+        .instruction-panel .desc {
+            font-size: 13px;
+            color: #f0f0f0;
+            margin-top: 6px;
+        }
+        .instruction-panel .tip {
+            font-size: 12px;
+            color: #ccc;
+            margin-top: 12px;
+            font-style: italic;
+        }
+        @keyframes pulse-icon {
+            from { transform: scale(1); opacity: 0.8; }
+            to { transform: scale(1.1); opacity: 1; }
+        }
+
+        /* Botón de ayuda/rearme */
+        .helper-btn {
+            position: fixed;
+            bottom: 25px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(8px);
+            border: 1px solid #ffc107;
+            border-radius: 60px;
+            padding: 10px 18px;
+            font-size: 14px;
+            font-weight: bold;
+            color: #ffdd99;
+            pointer-events: auto;
+            cursor: pointer;
+            z-index: 200;
+            transition: 0.2s;
+            font-family: inherit;
+        }
+        .helper-btn:hover {
+            background: black;
+            transform: scale(1.02);
+        }
+
+        /* Pantalla de carga */
+        #loading-screen {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at 30% 20%, #0a0f1f, #03050b);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            z-index: 300;
+            transition: opacity 0.6s ease;
+            text-align: center;
+            padding: 24px;
+        }
+        #loading-screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        .stars {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+        }
+        .star {
+            position: absolute;
+            width: 2px;
+            height: 2px;
+            background: white;
+            border-radius: 50%;
+            animation: twinkle 2s infinite alternate;
+        }
+        @keyframes twinkle {
+            0% { opacity: 0.2; transform: scale(1);}
+            100% { opacity: 1; transform: scale(1.3);}
+        }
+        .load-emoji {
+            font-size: 70px;
+            filter: drop-shadow(0 0 10px gold);
+            animation: levitate 1s infinite alternate;
+        }
+        @keyframes levitate {
+            from { transform: translateY(0); }
+            to { transform: translateY(-10px); }
+        }
+        .load-title {
+            font-size: 28px;
+            font-weight: 900;
+            background: linear-gradient(135deg, #ffe6a3, #ffaa55);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .load-subtitle {
+            font-size: 15px;
+            color: #bbd4ff;
+            max-width: 260px;
+        }
+        .loader-bar {
+            width: 260px;
+            height: 6px;
+            background: #2a3345;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .loader-fill {
+            width: 0%;
+            height: 100%;
+            background: linear-gradient(90deg, #ffcc77, #ff914d);
+            border-radius: 10px;
+            transition: width 0.2s;
+        }
+        .loader-status-text {
+            font-size: 12px;
+            color: #b8c7ff;
+            margin-top: 6px;
+        }
+
+        /* Celebración */
+        #celebration {
+            position: fixed;
+            top: 45%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.75);
+            backdrop-filter: blur(18px);
+            border-radius: 80px;
+            padding: 18px 36px;
+            white-space: nowrap;
+            pointer-events: none;
+            opacity: 0;
+            transition: 0.2s;
+            z-index: 250;
+        }
+        #celebration.show {
+            opacity: 1;
+            animation: popUp 0.4s cubic-bezier(0.34, 1.2, 0.64, 1);
+        }
+        @keyframes popUp {
+            0% { scale: 0.6; opacity: 0; }
+            80% { scale: 1.05; }
+            100% { scale: 1; opacity: 1; }
+        }
+        .cele-text {
+            font-size: 28px;
+            font-weight: 900;
+            color: #FFD966;
+        }
+
+        /* Pantalla de error */
+        #error-screen {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #1d0a0a;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            z-index: 400;
+            padding: 32px;
+            text-align: center;
+        }
+        #error-screen.visible {
+            display: flex;
+        }
+        .err-icon {
+            font-size: 64px;
+        }
+        .err-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ffb4a2;
+        }
+        .err-message {
+            color: #ffcfcf;
+            font-size: 15px;
+        }
+    </style>
+</head>
+<body>
+
+<div id="ui-overlay">
+    <div style="display: flex; justify-content: center;">
+        <div id="status-card" class="status-card">
+            <span class="status-icon">📷</span>
+            <span class="status-text" id="status-text">Iniciando...</span>
+        </div>
+    </div>
+    <div style="display: flex; justify-content: center; margin-bottom: 20px;">
+        <div id="instruction-panel" class="instruction-panel">
+            <span class="big-icon">🗺️✨</span>
+            <div class="title">¡Apunta a la postal!</div>
+            <div class="desc">El mapa 3D aparecerá sobre ella</div>
+            <div class="tip">💡 Buena luz, postal bien iluminada</div>
+        </div>
+    </div>
+</div>
+
+<div id="celebration"><div class="cele-text">🎉 ¡Municipio descubierto! 🎉</div></div>
+<button id="reset-tracking-btn" class="helper-btn" style="display: none;">🔄 Reanudar búsqueda</button>
+
+<div id="loading-screen">
+    <div class="stars" id="stars-container"></div>
+    <div class="load-emoji">⛰️</div>
+    <div class="load-title">Terreno en 3D</div>
+    <div class="load-subtitle">Cargando modelo del municipio...<br>Prepárate para la magia</div>
+    <div class="loader-bar"><div class="loader-fill" id="loader-fill"></div></div>
+    <div class="loader-status-text" id="loader-status">🚀 Inicializando AR...</div>
+</div>
+
+<div id="error-screen">
+    <div class="err-icon">⚠️</div>
+    <div class="err-title">Algo salió mal</div>
+    <div class="err-message" id="error-message">No se pudo iniciar la experiencia.<br>Intenta con Chrome o Edge actualizado.</div>
+</div>
+
+<!-- Librerías A-Frame + MindAR -->
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+<!-- Componente personalizado: Asegurar material visible y corrección de orientación -->
+<script>
+AFRAME.registerComponent('fix-qgis-model', {
+    schema: {
+        rotateX: { default: -90 },   // Gira modelo acostado a vertical
+        applyMaterial: { default: true }
+    },
+    init: function() {
+        let el = this.el;
+        let data = this.data;
+
+        el.addEventListener('model-loaded', () => {
+            let mesh = el.getObject3D('mesh');
+            if (!mesh) return;
+
+            // Recorrer todos los meshes y arreglar material/textura si está oscuro
+            mesh.traverse((node) => {
+                if (node.isMesh) {
+                    if (data.applyMaterial) {
+                        // Material base tipo terreno (verde/marrón) si viene sin material o negro
+                        if (!node.material || (node.material && node.material.color && node.material.color.getHex() === 0x000000)) {
+                            node.material = new THREE.MeshStandardMaterial({
+                                color: 0x8b5a2b,
+                                roughness: 0.7,
+                                metalness: 0.1,
+                                side: THREE.DoubleSide
+                            });
+                        } else if (node.material && node.material.color) {
+                            // Mejorar iluminación sin perder colores originales
+                            node.material.roughness = 0.6;
+                            node.material.metalness = 0.1;
+                            node.material.side = THREE.DoubleSide;
+                            if (node.material.map) node.material.map.encoding = THREE.sRGBEncoding;
+                        }
+                    }
+                    // Asegurar que recibe sombras aunque sea ligero
+                    node.castShadow = false;
+                    node.receiveShadow = false;
+                }
+            });
+        });
+    }
+});
+</script>
+
+<!-- Escena AR con MindAR -->
+<a-scene
+    mindar-image="imageTargetSrc: ./targets.mind; maxTrack: 1; filterMinCF: 0.001; filterBeta: 0.01; warmupTolerance: 8; missTolerance: 12;"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false"
+    renderer="antialias: true; colorManagement: true;"
+>
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <a-entity mindar-image-target="targetIndex: 0">
+        <!-- Modelo GLTF desde QGIS (puede ser .gltf o .glb)
+             Ajusta scale según tamaño real del modelo (prueba 0.04 o 0.06)
+             rotation -90 en X porque QGIS exporta acostado.
+             fix-qgis-model aplicará material si viene oscuro -->
+        <a-gltf-model
+            id="modelo-terreno"
+            src="./malla3d.gltf"
+            scale="0.045 0.045 0.045"
+            rotation="-90 0 0"
+            position="0 0.05 0"
+            fix-qgis-model="rotateX: -90; applyMaterial: true"
+        ></a-gltf-model>
+
+        <!-- Iluminación específica para el target -->
+        <a-light type="directional" intensity="1.4" position="1 2 1" color="#FFFFFF"></a-light>
+        <a-light type="ambient" intensity="0.9" color="#FFF5E0"></a-light>
+        <a-light type="directional" intensity="0.5" position="-1 0.5 -1" color="#AACCFF"></a-light>
+    </a-entity>
+
+    <!-- Luz ambiente global -->
+    <a-light type="ambient" intensity="0.75"></a-light>
+</a-scene>
+
+<script>
+(function() {
+    // Elementos UI
+    const loadingScreen = document.getElementById('loading-screen');
+    const loaderFill = document.getElementById('loader-fill');
+    const loaderStatus = document.getElementById('loader-status');
+    const statusCard = document.getElementById('status-card');
+    const statusText = document.getElementById('status-text');
+    const instructionPanel = document.getElementById('instruction-panel');
+    const celebrationDiv = document.getElementById('celebration');
+    const resetBtn = document.getElementById('reset-tracking-btn');
+    const errorScreen = document.getElementById('error-screen');
+    const errorMsgSpan = document.getElementById('error-message');
+
+    let modelLoaded = false;
+    let targetTracked = false;
+    let firstTrack = true;
+    let trackTimeout = null;
+
+    // Generar estrellas en fondo de carga
+    const starsContainer = document.getElementById('stars-container');
+    for (let i = 0; i < 70; i++) {
+        const star = document.createElement('div');
+        star.className = 'star';
+        star.style.left = Math.random() * 100 + '%';
+        star.style.top = Math.random() * 100 + '%';
+        star.style.animationDelay = Math.random() * 3 + 's';
+        star.style.animationDuration = 1.5 + Math.random() * 1.5 + 's';
+        starsContainer.appendChild(star);
+    }
+
+    // Simular progreso de carga mientras se carga el modelo
+    let progress = 10;
+    const intervalProgress = setInterval(() => {
+        if (!modelLoaded) {
+            progress = Math.min(progress + (Math.random() * 8), 90);
+            loaderFill.style.width = progress + '%';
+            if (progress > 60) loaderStatus.innerText = '📦 Cargando modelo 3D...';
+            if (progress > 80) loaderStatus.innerText = '🎨 Preparando terreno...';
+        } else {
+            loaderFill.style.width = '100%';
+            loaderStatus.innerText = '✅ ¡Listo! Buscando postal...';
+            clearInterval(intervalProgress);
+            setTimeout(() => {
+                loadingScreen.classList.add('hidden');
+            }, 800);
+        }
+    }, 400);
+
+    // Escuchar cuando el modelo esté listo en A-Frame
+    const modelEntity = document.getElementById('modelo-terreno');
+    if (modelEntity) {
+        modelEntity.addEventListener('model-loaded', () => {
+            modelLoaded = true;
+            loaderFill.style.width = '100%';
+            loaderStatus.innerText = '✅ Modelo cargado, busca la postal';
+            setTimeout(() => {
+                if (!loadingScreen.classList.contains('hidden')) {
+                    loadingScreen.classList.add('hidden');
+                }
+            }, 500);
+        });
+        // timeout por si el modelo no dispara evento
+        setTimeout(() => {
+            if (!modelLoaded) {
+                modelLoaded = true;
+                loaderFill.style.width = '100%';
+                loaderStatus.innerText = 'Modelo listo (directo)';
+                setTimeout(() => loadingScreen.classList.add('hidden'), 400);
+            }
+        }, 8000);
+    } else {
+        // fallback
+        setTimeout(() => {
+            modelLoaded = true;
+            loaderFill.style.width = '100%';
+            loadingScreen.classList.add('hidden');
+        }, 4000);
+    }
+
+    // Eventos MindAR
+    document.addEventListener('mindar-image-targetFound', (e) => {
+        targetTracked = true;
+        statusCard.classList.add('found');
+        statusCard.classList.remove('lost');
+        statusText.innerText = '✅ ¡Postal detectada!';
+        instructionPanel.style.opacity = '0';
+        if (resetBtn) resetBtn.style.display = 'none';
+        if (firstTrack) {
+            firstTrack = false;
+            celebrationDiv.classList.add('show');
+            setTimeout(() => {
+                celebrationDiv.classList.remove('show');
+            }, 2800);
+        }
+        if (trackTimeout) clearTimeout(trackTimeout);
+    });
+
+    document.addEventListener('mindar-image-targetLost', () => {
+        targetTracked = false;
+        statusCard.classList.remove('found');
+        statusCard.classList.add('lost');
+        statusText.innerText = '🔍 Buscando la postal...';
+        instructionPanel.style.opacity = '0.8';
+        // Mostrar botón de ayuda si pasa mucho tiempo perdido
+        if (trackTimeout) clearTimeout(trackTimeout);
+        trackTimeout = setTimeout(() => {
+            if (!targetTracked && resetBtn) {
+                resetBtn.style.display = 'flex';
+                statusText.innerText = '💡 ¿Problemas? Toca el botón ↻';
+            }
+        }, 9000);
+    });
+
+    // Botón de reset: reinicia el tracking (recarga la escena o fuerza reinicio)
+    resetBtn.addEventListener('click', () => {
+        resetBtn.style.display = 'none';
+        statusText.innerText = 'Reiniciando...';
+        // Reiniciar el sistema de tracking de MindAR sin recargar todo
+        const scene = document.querySelector('a-scene');
+        if (scene && scene.components['mindar-image']) {
+            scene.components['mindar-image'].restart();
+        } else {
+            window.location.reload(); // fallback
+        }
+        setTimeout(() => {
+            statusText.innerText = '🔍 Buscando postal...';
+        }, 1500);
+    });
+
+    // Manejar errores de WebGL y permisos
+    window.addEventListener('error', (e) => {
+        if (e.message && (e.message.includes('WebGL') || e.message.includes('Context'))) {
+            errorMsgSpan.innerText = 'El dispositivo no soporta WebGL.\nActualiza Chrome o revisa los controladores.';
+            errorScreen.classList.add('visible');
+            loadingScreen.classList.add('hidden');
+        }
+    });
+
+    // Intento de acceso a cámara (webRTC)
+    navigator.mediaDevices.getUserMedia({ video: true })
+        .then(() => console.log('Cámara disponible'))
+        .catch((err) => {
+            console.warn(err);
+            errorMsgSpan.innerText = 'No se pudo acceder a la cámara.\nPermite el acceso en la configuración.';
+            errorScreen.classList.add('visible');
+            loadingScreen.classList.add('hidden');
+        });
+})();
+</script>
+</body>
+</html>
