@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>🌍 Explorador de Terreno 3D</title>
+
+    <!-- =====================================================================
+         FUENTE: Nunito (redondeada, amigable para niños)
+    ====================================================================== -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+
+    <style>
+        /* =====================================================================
+           VARIABLES GLOBALES — Paleta científica + infantil
+        ====================================================================== */
+        :root {
+            --full-h: 100vh;
+            --c-bg:        #0a1628;
+            --c-sky:       #0d2b52;
+            --c-accent:    #ffd166;
+            --c-green:     #06d6a0;
+            --c-blue:      #118ab2;
+            --c-rain:      #90e0ef;
+            --c-flood:     #0077b6cc;
+            --c-danger:    #ef476f;
+            --c-white:     #f8f9fa;
+            --c-pill-bg:   rgba(10,22,40,0.82);
+            --radius-pill: 50px;
+            --shadow-glow: 0 0 24px rgba(255,209,102,0.45);
+            --font-main:   'Nunito', 'Arial Rounded MT Bold', Arial, sans-serif;
+            --font-body:   'Nunito Sans', Arial, sans-serif;
+        }
+        @supports (height: 100dvh) { :root { --full-h: 100dvh; } }
+
+        /* =====================================================================
+           RESET & BASE
+        ====================================================================== */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background: transparent;
+            font-family: var(--font-main);
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        /* =====================================================================
+           ESCENA A-FRAME — fija, capa base
+        ====================================================================== */
+        a-scene {
+            position: fixed !important;
+            top: 0 !important; left: 0 !important;
+            width: 100vw !important;
+            height: var(--full-h) !important;
+            z-index: 0 !important;
+        }
+        a-scene canvas {
+            position: fixed !important;
+            top: 0 !important; left: 0 !important;
+            width: 100vw !important;
+            height: var(--full-h) !important;
+        }
+
+        /* =====================================================================
+           OVERLAY UI — encima del AR, sin bloquear eventos del canvas
+        ====================================================================== */
+        #ui-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100vw;
+            height: var(--full-h);
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        /* ── BARRA DE ESTADO ─────────────────────────────────────────────── */
+        #info-bar {
+            position: absolute;
+            top: env(safe-area-inset-top, 16px);
+            top: max(16px, env(safe-area-inset-top));
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 11px 22px;
+            border-radius: var(--radius-pill);
+            font-size: 16px; font-weight: 800; color: var(--c-white);
+            white-space: nowrap; pointer-events: none;
+            background: var(--c-pill-bg);
+            border: 2px solid rgba(255,255,255,0.15);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            transition: background 0.5s ease, border-color 0.5s ease, transform 0.3s ease;
+            text-shadow: 0 1px 6px rgba(0,0,0,0.6);
+            letter-spacing: 0.01em;
+        }
+        #info-bar.found {
+            background: rgba(6,214,160,0.88);
+            border-color: rgba(100,255,200,0.5);
+            box-shadow: 0 0 20px rgba(6,214,160,0.4);
+        }
+        #info-bar.lost {
+            background: rgba(239,71,111,0.82);
+            border-color: rgba(255,160,160,0.5);
+        }
+        #info-bar.pulse {
+            animation: bar-pulse 0.45s ease;
+        }
+        @keyframes bar-pulse {
+            0%   { transform: translateX(-50%) scale(1); }
+            40%  { transform: translateX(-50%) scale(1.07); }
+            100% { transform: translateX(-50%) scale(1); }
+        }
+
+        /* ── INSTRUCCIONES (abajo) ────────────────────────────────────────── */
+        #instruction-box {
+            position: absolute;
+            bottom: max(32px, env(safe-area-inset-bottom, 32px));
+            left: 50%;
+            transform: translateX(-50%);
+            pointer-events: none; text-align: center;
+            transition: opacity 0.5s ease, transform 0.5s ease;
+        }
+        #instruction-box.hidden-inst {
+            opacity: 0;
+            transform: translateX(-50%) translateY(20px);
+        }
+        .inst-bubble {
+            display: inline-block;
+            background: rgba(255,255,255,0.95);
+            color: #1a2a3a;
+            padding: 14px 26px;
+            border-radius: 22px;
+            font-size: 15px; font-weight: 700; line-height: 1.7;
+            box-shadow: 0 6px 28px rgba(0,0,0,0.4);
+            border: 3px solid var(--c-accent);
+        }
+        .inst-bubble .big-icon {
+            display: block; font-size: 38px; margin-bottom: 4px;
+            animation: bounce-icon 1.5s ease-in-out infinite alternate;
+        }
+        @keyframes bounce-icon {
+            from { transform: translateY(0) rotate(-5deg); }
+            to   { transform: translateY(-8px) rotate(5deg); }
+        }
+
+        /* ── BOTÓN SIMULACIÓN DE RIESGO ───────────────────────────────────── */
+        #risk-btn {
+            position: fixed;
+            bottom: max(20px, env(safe-area-inset-bottom, 20px));
+            right: 16px;
+            pointer-events: auto;
+            cursor: pointer;
+            z-index: 200;
+            background: var(--c-pill-bg);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 2px solid var(--c-blue);
+            border-radius: var(--radius-pill);
+            padding: 12px 20px;
+            color: var(--c-rain);
+            font-family: var(--font-main);
+            font-size: 15px; font-weight: 800;
+            display: none;                        /* visible solo cuando modelo cargado */
+            align-items: center; gap: 8px;
+            transition: background 0.3s, border-color 0.3s, transform 0.15s;
+            text-shadow: none;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+            -webkit-user-select: none; user-select: none;
+        }
+        #risk-btn:active { transform: scale(0.94); }
+        #risk-btn.active {
+            background: rgba(0,119,182,0.88);
+            border-color: var(--c-rain);
+            color: #fff;
+            box-shadow: 0 0 18px rgba(144,224,239,0.4);
+        }
+        #risk-btn .btn-icon { font-size: 22px; display: block; transition: transform 0.3s; }
+        #risk-btn.active .btn-icon { animation: rain-drop 0.7s ease-in-out infinite alternate; }
+        @keyframes rain-drop {
+            from { transform: translateY(0); }
+            to   { transform: translateY(4px); }
+        }
+
+        /* ── BOTÓN REINICIAR ─────────────────────────────────────────────── */
+        #reset-btn {
+            position: fixed;
+            bottom: max(20px, env(safe-area-inset-bottom, 20px));
+            left: 16px;
+            background: var(--c-pill-bg);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255,170,68,0.5);
+            border-radius: var(--radius-pill);
+            padding: 10px 18px;
+            color: #ffd699;
+            font-weight: 800; font-size: 14px;
+            font-family: var(--font-main);
+            pointer-events: auto; cursor: pointer;
+            z-index: 200; display: none;
+            transition: transform 0.15s;
+        }
+        #reset-btn:active { transform: scale(0.96); }
+
+        /* ── CELEBRACIÓN ──────────────────────────────────────────────────── */
+        #celebration {
+            position: fixed; top: 50%; left: 50%;
+            transform: translate(-50%, -50%) scale(0.6);
+            background: rgba(6,214,160,0.92);
+            color: #fff;
+            padding: 18px 32px; border-radius: 60px;
+            font-size: 22px; font-weight: 900;
+            z-index: 250; pointer-events: none;
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            opacity: 0;
+            transition: opacity 0.3s, transform 0.35s cubic-bezier(0.34,1.56,0.64,1);
+            box-shadow: 0 0 40px rgba(6,214,160,0.5);
+            text-align: center; letter-spacing: 0.02em;
+        }
+        #celebration.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+        }
+
+        /* ── INDICADOR DE LLUVIA (esquina superior derecha) ────────────────── */
+        #rain-indicator {
+            position: fixed; top: 70px; right: 14px;
+            background: rgba(0,119,182,0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 2px solid var(--c-rain);
+            border-radius: 16px; padding: 10px 14px;
+            font-family: var(--font-main); font-size: 13px; font-weight: 800;
+            color: #e0f7fa; text-align: center; line-height: 1.5;
+            z-index: 200; display: none; pointer-events: none;
+            box-shadow: 0 0 16px rgba(144,224,239,0.3);
+        }
+        #rain-indicator.active { display: block; animation: fadein 0.4s ease; }
+        @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
+        #rain-indicator .ri-title { font-size: 20px; display: block; margin-bottom: 2px; }
+
+        /* ── PANEL DEBUG ────────────────────────────────────────────────── */
+        #debug-panel {
+            position: fixed; bottom: 10px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.82);
+            backdrop-filter: blur(4px);
+            color: #a0ffb0;
+            font-family: monospace; font-size: 11px;
+            padding: 6px 12px; border-radius: 8px;
+            z-index: 500; pointer-events: none;
+            border-left: 4px solid #ffaa44;
+            max-width: 85%; text-align: center;
+            line-height: 1.4; word-break: break-word;
+            opacity: 0.85;
+        }
+
+        /* ── PANTALLA DE CARGA ────────────────────────────────────────────── */
+        #loading-screen {
+            position: fixed; inset: 0;
+            background: linear-gradient(160deg, var(--c-bg) 0%, var(--c-sky) 60%, #0a3d6b 100%);
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            gap: 18px; padding: 32px; text-align: center;
+            z-index: 300;
+            transition: opacity 0.7s ease;
+        }
+        #loading-screen.hidden { opacity: 0; pointer-events: none; }
+
+        /* Estrellas fondo */
+        .stars-bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+        .star {
+            position: absolute; border-radius: 50%;
+            background: white;
+            animation: twinkle 2s infinite alternate;
+        }
+        @keyframes twinkle {
+            from { opacity: 0.15; transform: scale(1); }
+            to   { opacity: 1;    transform: scale(1.6); }
+        }
+
+        .load-planet { font-size: 80px; animation: float-planet 2s ease-in-out infinite alternate; filter: drop-shadow(0 0 22px rgba(255,220,50,0.65)); }
+        @keyframes float-planet {
+            from { transform: translateY(0) rotate(-3deg); }
+            to   { transform: translateY(-16px) rotate(3deg); }
+        }
+        .load-title {
+            font-size: 30px; font-weight: 900; color: var(--c-accent);
+            text-shadow: 0 0 28px rgba(255,209,102,0.55);
+            letter-spacing: 0.02em;
+        }
+        .load-subtitle {
+            font-size: 16px; color: #a8d8ea; line-height: 1.8;
+            font-family: var(--font-body); max-width: 280px;
+        }
+        .load-subtitle strong { color: var(--c-accent); font-family: var(--font-main); }
+        .loader-bar-wrap {
+            width: min(300px, 80vw); height: 12px;
+            background: rgba(255,255,255,0.12);
+            border-radius: 20px; overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.15);
+        }
+        .loader-bar-fill {
+            height: 100%; width: 0%;
+            background: linear-gradient(90deg, var(--c-green), var(--c-accent), #ff9a3c);
+            border-radius: 20px;
+            animation: fill-bar 8s ease-out forwards;
+        }
+        @keyframes fill-bar {
+            0%   { width: 4%; }
+            25%  { width: 35%; }
+            60%  { width: 72%; }
+            100% { width: 93%; }
+        }
+        .load-tips {
+            font-size: 14px; color: rgba(168,216,234,0.7);
+            font-family: var(--font-body);
+            animation: fade-tip 4s ease-in-out infinite;
+        }
+        @keyframes fade-tip {
+            0%,100% { opacity: 0; } 20%,80% { opacity: 1; }
+        }
+
+        /* ── PANTALLA DE ERROR ──────────────────────────────────────────────── */
+        #error-screen {
+            display: none; position: fixed; inset: 0;
+            background: linear-gradient(160deg, #2d0a0a, #4a1010);
+            flex-direction: column; align-items: center;
+            justify-content: center; gap: 16px;
+            z-index: 400; padding: 32px; text-align: center;
+        }
+        #error-screen.visible { display: flex; }
+        #error-screen .err-icon { font-size: 70px; }
+        #error-screen h2 { font-size: 24px; color: #ff8a8a; font-weight: 900; }
+        #error-screen p  { font-size: 15px; color: #ffcccc; line-height: 1.8; max-width: 340px; font-family: var(--font-body); }
+
+        /* ── CANVAS LLUVIA (2D overlay) ────────────────────────────────────── */
+        #rain-canvas {
+            position: fixed; inset: 0;
+            width: 100vw; height: var(--full-h);
+            z-index: 50; pointer-events: none;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<!-- =========================================================================
+     CANVAS DE LLUVIA 2D (se dibuja encima del AR)
+========================================================================== -->
+<canvas id="rain-canvas"></canvas>
+
+<!-- =========================================================================
+     OVERLAY UI
+========================================================================== -->
+<div id="ui-overlay">
+    <div id="info-bar">📸 ¡Apunta a la postal!</div>
+    <div id="instruction-box">
+        <div class="inst-bubble">
+            <span class="big-icon">🗺️</span>
+            Mueve el dispositivo hacia<br>la <strong>tarjeta postal</strong>
+        </div>
+    </div>
+</div>
+
+<!-- INDICADOR DE SIMULACIÓN DE LLUVIA -->
+<div id="rain-indicator">
+    <span class="ri-title">🌧️</span>
+    Simulando<br><strong>inundación</strong>
+</div>
+
+<!-- BOTÓN SIMULACIÓN -->
+<button id="risk-btn" aria-label="Activar simulación de lluvia e inundación">
+    <span class="btn-icon">🌧️</span>
+    Simular lluvia
+</button>
+
+<!-- BOTÓN REINICIAR -->
+<button id="reset-btn">🔄 Reintentar</button>
+
+<!-- MENSAJE CELEBRACIÓN -->
+<div id="celebration">🎉 ¡Mapa en 3D! 🎉</div>
+
+<!-- DEBUG -->
+<div id="debug-panel">🟡 Inicializando...</div>
+
+<!-- =========================================================================
+     PANTALLA DE CARGA
+========================================================================== -->
+<div id="loading-screen">
+    <div class="stars-bg" id="stars-bg"></div>
+    <div class="load-planet">🌍</div>
+    <div class="load-title">Cargando terreno 3D</div>
+    <div class="load-subtitle">Prepara tu <strong>tarjeta postal</strong><br>con buena iluminación ☀️</div>
+    <div class="loader-bar-wrap"><div class="loader-bar-fill"></div></div>
+    <div class="load-tips">💡 ¡Evita reflejos y sombras sobre la postal!</div>
+</div>
+
+<!-- =========================================================================
+     PANTALLA DE ERROR
+========================================================================== -->
+<div id="error-screen">
+    <div class="err-icon">😢</div>
+    <h2>¡Algo salió mal!</h2>
+    <p id="error-msg">No se pudo cargar el modelo 3D.<br>Revisa el panel de depuración.</p>
+</div>
+
+<!-- =========================================================================
+     DETECCIÓN WEBGL + GENERACIÓN DE ESTRELLAS (inline, antes de A-Frame)
+========================================================================== -->
+<script>
+(function () {
+    /* ── Verificar soporte WebGL ── */
+    var c = document.createElement('canvas');
+    var gl = c.getContext('webgl') || c.getContext('experimental-webgl');
+    if (!gl) {
+        document.getElementById('loading-screen').classList.add('hidden');
+        document.getElementById('error-screen').classList.add('visible');
+        document.getElementById('error-msg').innerHTML =
+            'Tu navegador no soporta WebGL.<br>Prueba con Chrome o Safari actualizado.';
+        throw new Error('Sin WebGL');
+    }
+    c = null; gl = null; // liberar referencia
+
+    /* ── Generar estrellas de fondo ── */
+    var bg = document.getElementById('stars-bg');
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < 55; i++) {
+        var s = document.createElement('div');
+        var sz = (Math.random() * 3 + 2) + 'px';
+        s.className = 'star';
+        s.style.cssText =
+            'left:'   + (Math.random()*100) + '%' +
+            ';top:'   + (Math.random()*100) + '%' +
+            ';width:' + sz + ';height:' + sz +
+            ';animation-delay:'    + (Math.random()*2.5) + 's' +
+            ';animation-duration:' + (1.2 + Math.random()*1.8) + 's';
+        frag.appendChild(s);
+    }
+    bg.appendChild(frag);
+})();
+</script>
+
+<!-- =========================================================================
+     LIBRERÍAS AR
+========================================================================== -->
+<script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+
+<!-- =========================================================================
+     ESCENA AR
+     ⚠️  NO modificar la configuración de mindar-image ni las rutas de archivos.
+========================================================================== -->
+<a-scene
+    mindar-image="imageTargetSrc: ./targets.mind; maxTrack: 1; filterMinCF: 0.0001; filterBeta: 0.01; warmupTolerance: 10; missTolerance: 10;"
+    vr-mode-ui="enabled: false"
+    device-orientation-permission-ui="enabled: false"
+    renderer="colorManagement: true; antialias: false;"
+>
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+    <a-entity mindar-image-target="targetIndex: 0">
+
+        <!-- ── MODELO PRINCIPAL (no cambiar ruta ni escala base) ── -->
+        <a-gltf-model
+            id="modelo-3d"
+            src="./modelo_blend.glb"
+            scale="1 1 1"
+            position="0 0 0"
+            rotation="-90 0 0"
+        ></a-gltf-model>
+
+        <!-- ── PLANO DE INUNDACIÓN (empieza oculto, animado por JS) ── -->
+        <!--
+            Posición Y negativa = debajo del terreno.
+            El JS lo sube gradualmente para simular el nivel del agua.
+            opacity y color se gestionan también desde JS.
+        -->
+        <a-plane
+            id="flood-plane"
+            width="1.1" height="1.1"
+            rotation="0 0 0"
+            position="0 -0.12 0"
+            material="color: #0077b6; opacity: 0; transparent: true; side: double;"
+            visible="false"
+        ></a-plane>
+
+        <!-- ── ILUMINACIÓN ESCENA ── -->
+        <a-light type="directional" intensity="1.5" position="1 2 1"  color="#fff5e0"></a-light>
+        <a-light type="ambient"     intensity="0.8"                   color="#ffffff"></a-light>
+        <a-light type="directional" intensity="0.5" position="-1 -1 0.5" color="#aaccff"></a-light>
+    </a-entity>
+</a-scene>
+
+<!-- =========================================================================
+     SISTEMA DE CONTROL PRINCIPAL
+========================================================================== -->
+<script>
+(function () {
+    'use strict';
+
+    /* ════════════════════════════════════════════════════════════════════
+       REFERENCIAS AL DOM
+    ═════════════════════════════════════════════════════════════════════ */
+    const debugDiv      = document.getElementById('debug-panel');
+    const loadingScreen = document.getElementById('loading-screen');
+    const infoBar       = document.getElementById('info-bar');
+    const instructBox   = document.getElementById('instruction-box');
+    const errorScreen   = document.getElementById('error-screen');
+    const errorMsg      = document.getElementById('error-msg');
+    const resetBtn      = document.getElementById('reset-btn');
+    const riskBtn       = document.getElementById('risk-btn');
+    const rainCanvas    = document.getElementById('rain-canvas');
+    const celebrationEl = document.getElementById('celebration');
+    const rainIndicator = document.getElementById('rain-indicator');
+
+    /* ════════════════════════════════════════════════════════════════════
+       ESTADO GLOBAL
+    ═════════════════════════════════════════════════════════════════════ */
+    let modelLoaded    = false;
+    let targetDetected = false;
+    let firstFound     = true;
+    let lostTimer      = null;
+
+    // Estado del simulador de lluvia/inundación
+    let simulationActive = false;
+    let rainAnimFrame    = null;   // ID del requestAnimationFrame para la lluvia
+    let floodAnimFrame   = null;   // ID del rAF para el nivel de agua
+    let floodLevel       = -0.12;  // posición Y inicial del plano de agua
+    const FLOOD_MAX      = 0.04;   // nivel máximo del agua (just over the terrain)
+    const FLOOD_SPEED    = 0.00015; // velocidad de subida por frame
+
+    /* ════════════════════════════════════════════════════════════════════
+       UTILIDADES DE DEBUG
+    ═════════════════════════════════════════════════════════════════════ */
+    function updateDebug(text, isError = false) {
+        const prefix = isError ? '❌ ' : (modelLoaded ? '✅ ' : '🟡 ');
+        debugDiv.innerHTML = prefix + text + ' — ' + new Date().toLocaleTimeString('es-MX', { hour12: false });
+        debugDiv.style.borderLeftColor = isError ? '#ff4444' : '#ffaa44';
+        debugDiv.style.color           = isError ? '#ffaa88' : '#a0ffb0';
+        console.log('[AR-DEBUG]', text);
+    }
+
+    /* ════════════════════════════════════════════════════════════════════
+       CARGA DEL MODELO
+    ═════════════════════════════════════════════════════════════════════ */
+    const modelEl = document.getElementById('modelo-3d');
+
+    if (!modelEl) {
+        updateDebug('No se encontró el elemento a-gltf-model', true);
+        errorScreen.classList.add('visible');
+        loadingScreen.classList.add('hidden');
+        return; // Salir si no existe el elemento
+    }
+
+    /* Verificar accesibilidad del GLB antes de que A-Frame lo intente cargar */
+    fetch('./modelo_blend.glb', { method: 'HEAD' })
+        .then(resp => {
+            if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}`);
+            }
+            updateDebug('Archivo GLB accesible, cargando...');
+        })
+        .catch(err => {
+            updateDebug(`GLB no encontrado: ${err.message}`, true);
+            errorScreen.classList.add('visible');
+            loadingScreen.classList.add('hidden');
+            errorMsg.innerHTML =
+                'No se encontró <code>modelo_blend.glb</code>.<br>' +
+                'Asegúrate de que está en la misma carpeta que este archivo HTML.';
+        });
+
+    /* Evento: modelo cargado correctamente */
+    modelEl.addEventListener('model-loaded', () => {
+        modelLoaded = true;
+        updateDebug('Modelo GLB cargado ✓');
+        // Ocultar pantalla de carga con animación
+        loadingScreen.classList.add('hidden');
+        // Mostrar botón de simulación
+        riskBtn.style.display = 'flex';
+    });
+
+    /* Evento: fallo al cargar modelo */
+    modelEl.addEventListener('model-error', (ev) => {
+        const detail = ev.detail || {};
+        const msg = detail.message || detail.src || 'Error desconocido';
+        updateDebug(`Error al cargar modelo: ${msg}`, true);
+        errorScreen.classList.add('visible');
+        loadingScreen.classList.add('hidden');
+        errorMsg.innerHTML =
+            `No se pudo cargar el modelo 3D.<br>Detalle: ${msg}<br>Verifica que el archivo .glb exista.`;
+        resetBtn.style.display = 'block';
+    });
+
+    /* Timeout de seguridad: si en 15s no cargó, alertar */
+    const loadTimeout = setTimeout(() => {
+        if (!modelLoaded) {
+            updateDebug('⏱ Carga lenta (>15s). ¿Conexión lenta?', true);
+        }
+    }, 15000);
+
+    // Limpiar timeout si el modelo carga
+    modelEl.addEventListener('model-loaded', () => clearTimeout(loadTimeout), { once: true });
+
+    /* ════════════════════════════════════════════════════════════════════
+       DETECCIÓN DEL TARGET (tracking)
+       ⚠️  Lógica intacta — solo se mejoró la animación de transición
+    ═════════════════════════════════════════════════════════════════════ */
+
+    /**
+     * Disparar animación de "pulso" en la barra de estado.
+     */
+    function pulseBar() {
+        infoBar.classList.remove('pulse');
+        void infoBar.offsetWidth; // reflow para reiniciar la animación
+        infoBar.classList.add('pulse');
+    }
+
+    document.addEventListener('mindar-image-targetFound', () => {
+        targetDetected = true;
+        clearTimeout(lostTimer);
+        updateDebug('Target detectado ✓');
+
+        infoBar.textContent = '✅ ¡Postal encontrada!';
+        infoBar.className = 'found';
+        pulseBar();
+
+        instructBox.classList.add('hidden-inst');
+        resetBtn.style.display = 'none';
+
+        /* Celebración solo la primera vez */
+        if (firstFound) {
+            firstFound = false;
+            celebrationEl.classList.add('show');
+            setTimeout(() => celebrationEl.classList.remove('show'), 2200);
+        }
+    });
+
+    document.addEventListener('mindar-image-targetLost', () => {
+        targetDetected = false;
+        updateDebug('Target perdido');
+
+        infoBar.textContent = '🔍 Buscando la postal...';
+        infoBar.className = 'lost';
+        pulseBar();
+
+        clearTimeout(lostTimer);
+        lostTimer = setTimeout(() => {
+            if (!targetDetected) {
+                updateDebug('Consejo: Mejora la iluminación y evita reflejos');
+                infoBar.textContent = '📸 ¡Apunta a la postal!';
+                infoBar.className = '';
+                instructBox.classList.remove('hidden-inst');
+                resetBtn.style.display = 'block';
+            }
+        }, 8000);
+    });
+
+    /* ════════════════════════════════════════════════════════════════════
+       BOTÓN DE REINICIO
+    ═════════════════════════════════════════════════════════════════════ */
+    resetBtn.addEventListener('click', () => {
+        const scene  = document.querySelector('a-scene');
+        const mindar = scene && scene.components['mindar-image'];
+        if (mindar && mindar.restartTracker) {
+            mindar.restartTracker();
+            updateDebug('Reiniciando tracker...');
+            resetBtn.style.display = 'none';
+            infoBar.textContent = '🔄 Reiniciando...';
+            infoBar.className = '';
+            setTimeout(() => {
+                if (!targetDetected) infoBar.textContent = '📸 ¡Apunta a la postal!';
+            }, 1800);
+        } else {
+            window.location.reload();
+        }
+    });
+
+    /* ════════════════════════════════════════════════════════════════════
+       SISTEMA DE PARTÍCULAS — LLUVIA 2D
+       ────────────────────────────────────────────────────────────────────
+       ¿Cómo funciona?
+       Se usa un <canvas> HTML2D superpuesto sobre la escena AR.
+       Cada "gota" es un objeto con:
+         x, y  → posición actual (píxeles)
+         vx,vy → velocidad (px/frame) — vy simula gravedad, vx el viento
+         len   → longitud visual de la gota
+         alpha → transparencia
+
+       En cada frame (requestAnimationFrame):
+         1. Se limpia el canvas con transparencia.
+         2. Se actualizan las posiciones sumando velocidad.
+         3. Si la gota sale por abajo, renace en la parte superior.
+         4. Se dibujan como líneas diagonales con gradiente.
+    ═════════════════════════════════════════════════════════════════════ */
+    const ctx = rainCanvas.getContext('2d');
+
+    /** Número de gotas — reducido para móviles */
+    const NUM_DROPS = 90;
+
+    /** Array de objetos gota */
+    let drops = [];
+
+    /**
+     * Crea una gota nueva en la parte superior (o aleatoria al iniciar).
+     * @param {boolean} randomY — si es true, empieza en posición Y aleatoria
+     */
+    function createDrop(randomY) {
+        return {
+            x: Math.random() * rainCanvas.width,
+            y: randomY ? Math.random() * rainCanvas.height : -20,
+            vx: -1.2,              // viento ligero hacia la izquierda
+            vy: 8 + Math.random() * 6,  // velocidad vertical (varía para realismo)
+            len: 14 + Math.random() * 18, // longitud de la gota
+            alpha: 0.35 + Math.random() * 0.5  // transparencia aleatoria
+        };
+    }
+
+    /**
+     * Ajusta el tamaño del canvas al viewport actual.
+     * Se llama al iniciar y en resize.
+     */
+    function resizeRainCanvas() {
+        rainCanvas.width  = window.innerWidth;
+        rainCanvas.height = window.innerHeight;
+    }
+
+    /**
+     * Inicializa el array de gotas.
+     */
+    function initDrops() {
+        drops = [];
+        for (let i = 0; i < NUM_DROPS; i++) {
+            drops.push(createDrop(true)); // posición Y aleatoria para llenar la pantalla desde el primer frame
+        }
+    }
+
+    /**
+     * Frame principal de la animación de lluvia.
+     * Se llama recursivamente vía requestAnimationFrame.
+     */
+    function animateRain() {
+        /* Limpiar canvas (fondo transparente) */
+        ctx.clearRect(0, 0, rainCanvas.width, rainCanvas.height);
+
+        /* Dibujar cada gota */
+        for (let i = 0; i < drops.length; i++) {
+            const d = drops[i];
+
+            /* Mover gota */
+            d.x += d.vx;
+            d.y += d.vy;
+
+            /* Renacer si sale por abajo o los lados */
+            if (d.y > rainCanvas.height + 30) {
+                drops[i] = createDrop(false);
+                continue;
+            }
+            if (d.x < -50) d.x = rainCanvas.width + 10;
+
+            /* Dibujar gota como línea diagonal */
+            ctx.beginPath();
+            ctx.moveTo(d.x, d.y);
+            ctx.lineTo(d.x + d.vx * 3, d.y + d.len); // extremo inferior con pendiente
+            ctx.strokeStyle = `rgba(144, 224, 239, ${d.alpha})`; // azul claro semitransparente
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+
+        /* Continuar el bucle */
+        rainAnimFrame = requestAnimationFrame(animateRain);
+    }
+
+    /* ════════════════════════════════════════════════════════════════════
+       SISTEMA DE INUNDACIÓN 3D
+       ────────────────────────────────────────────────────────────────────
+       ¿Cómo funciona?
+       Dentro de la escena A-Frame existe un <a-plane> (plano plano) que
+       actúa como "superficie del agua". Comienza por debajo del terreno
+       (posición Y = -0.12, invisible).
+
+       Cuando se activa la simulación:
+         • El plano se hace visible y semitransparente (azul aguamarina).
+         • En cada frame, su posición Y sube en FLOOD_SPEED unidades.
+         • La opacidad también aumenta gradualmente hasta 0.7.
+         • Al llegar a FLOOD_MAX, el nivel se detiene (inundación máxima).
+
+       Cuando se desactiva:
+         • El nivel baja gradualmente hasta volver a -0.12.
+         • Al llegar a cero visual, el plano se oculta.
+    ═════════════════════════════════════════════════════════════════════ */
+    const floodPlane = document.getElementById('flood-plane');
+
+    /**
+     * Sube el plano de agua frame a frame hasta FLOOD_MAX.
+     */
+    function animateFloodUp() {
+        if (floodLevel < FLOOD_MAX) {
+            floodLevel = Math.min(floodLevel + FLOOD_SPEED, FLOOD_MAX);
+
+            // Opacidad proporcional al nivel (máximo 0.68)
+            const progress = (floodLevel + 0.12) / (FLOOD_MAX + 0.12); // 0→1
+            const opacity  = Math.min(progress * 0.68, 0.68);
+
+            floodPlane.setAttribute('position', `0 ${floodLevel.toFixed(4)} 0`);
+            floodPlane.setAttribute('material', `color: #0077b6; opacity: ${opacity.toFixed(3)}; transparent: true; side: double;`);
+
+            floodAnimFrame = requestAnimationFrame(animateFloodUp);
+        }
+        // Al llegar al máximo simplemente no se llama de nuevo → queda en FLOOD_MAX
+    }
+
+    /**
+     * Baja el plano de agua frame a frame hasta el nivel inicial.
+     */
+    function animateFloodDown() {
+        if (floodLevel > -0.12) {
+            floodLevel = Math.max(floodLevel - FLOOD_SPEED * 2, -0.12); // baja más rápido
+
+            const progress = (floodLevel + 0.12) / (FLOOD_MAX + 0.12);
+            const opacity  = Math.max(progress * 0.68, 0);
+
+            floodPlane.setAttribute('position', `0 ${floodLevel.toFixed(4)} 0`);
+            floodPlane.setAttribute('material', `color: #0077b6; opacity: ${opacity.toFixed(3)}; transparent: true; side: double;`);
+
+            floodAnimFrame = requestAnimationFrame(animateFloodDown);
+        } else {
+            // Llegó abajo: ocultar el plano para ahorrar recursos
+            floodPlane.setAttribute('visible', 'false');
+        }
+    }
+
+    /* ════════════════════════════════════════════════════════════════════
+       BOTÓN ACTIVAR / DESACTIVAR SIMULACIÓN
+    ═════════════════════════════════════════════════════════════════════ */
+    riskBtn.addEventListener('click', () => {
+        simulationActive = !simulationActive;
+
+        if (simulationActive) {
+            /* ── ACTIVAR ── */
+            riskBtn.innerHTML  = '<span class="btn-icon">⛔</span> Detener lluvia';
+            riskBtn.classList.add('active');
+            rainIndicator.classList.add('active');
+
+            // Lluvia 2D
+            resizeRainCanvas();
+            initDrops();
+            rainCanvas.style.display = 'block';
+            animateRain();
+
+            // Inundación 3D
+            cancelAnimationFrame(floodAnimFrame);
+            floodPlane.setAttribute('visible', 'true');
+            animateFloodUp();
+
+        } else {
+            /* ── DESACTIVAR ── */
+            riskBtn.innerHTML  = '<span class="btn-icon">🌧️</span> Simular lluvia';
+            riskBtn.classList.remove('active');
+            rainIndicator.classList.remove('active');
+
+            // Detener lluvia 2D
+            cancelAnimationFrame(rainAnimFrame);
+            ctx.clearRect(0, 0, rainCanvas.width, rainCanvas.height);
+            rainCanvas.style.display = 'none';
+
+            // Bajar nivel de agua 3D
+            cancelAnimationFrame(floodAnimFrame);
+            animateFloodDown();
+        }
+    });
+
+    /* ════════════════════════════════════════════════════════════════════
+       RESPONSIVE — Ajustar canvas si cambia la orientación
+    ═════════════════════════════════════════════════════════════════════ */
+    window.addEventListener('resize', () => {
+        if (simulationActive) {
+            resizeRainCanvas();
+            // Las gotas existentes se mantienen; las nuevas ya nacerán con las coords correctas
+        }
+    });
+
+})();
+</script>
+
+</body>
+</html>
